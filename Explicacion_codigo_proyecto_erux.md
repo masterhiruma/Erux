@@ -358,13 +358,65 @@ const char* TOPIC_COMMAND_IN = "acceso/puerta1/command";
 
 ### 🎯 Funcionalidades Principales
 
-#### **1. Configuración Dinámica**
+#### **1. Configuración Dinámica DIP (Hardware + Software)**
 ```cpp
-// DIP switches para configuración sin reprogramar
-bool rfid_enabled = !digitalRead(PIN_DIP_RFID);
-bool qr_enabled = !digitalRead(PIN_DIP_QR);
-bool facial_enabled = !digitalRead(PIN_DIP_FACIAL);
-bool logic_and = !digitalRead(PIN_DIP_LOGIC_AND);
+// Sistema híbrido: Software override + Hardware fallback
+String readDipSwitchConfig() {
+    StaticJsonDocument<200> doc;
+    
+    // Prioridad: Software override, luego hardware físico
+    if (softwareConfigEnabled) {
+        doc["rfid"] = softwareConfig.rfid;
+        doc["qr"] = softwareConfig.qr;
+        doc["facial"] = softwareConfig.facial;
+        doc["logic"] = softwareConfig.logic;
+        doc["source"] = "software";
+    } else {
+        // Leer DIP switches físicos como fallback
+        bool rfid_enabled = !digitalRead(PIN_DIP_RFID);
+        bool qr_enabled = !digitalRead(PIN_DIP_QR);
+        bool facial_enabled = !digitalRead(PIN_DIP_FACIAL);
+        bool logic_and = !digitalRead(PIN_DIP_LOGIC_AND);
+        
+        doc["rfid"] = rfid_enabled;
+        doc["qr"] = qr_enabled;
+        doc["facial"] = facial_enabled;
+        doc["logic"] = logic_and ? "AND" : "OR";
+        doc["source"] = "hardware";
+    }
+    
+    // Generar representación binaria
+    int binary = (doc["logic"] == "AND" ? 8 : 0) |
+                 (doc["facial"] ? 4 : 0) |
+                 (doc["qr"] ? 2 : 0) |
+                 (doc["rfid"] ? 1 : 0);
+    
+    char binaryStr[5];
+    sprintf(binaryStr, "%04d", binary);
+    doc["binary"] = binaryStr;
+    
+    String result;
+    serializeJson(doc, result);
+    return result;
+}
+
+// Comando para actualizar configuración via MQTT
+void handleDipConfigCommand(String payload) {
+    StaticJsonDocument<200> doc;
+    deserializeJson(doc, payload);
+    
+    softwareConfig.rfid = doc["rfid"];
+    softwareConfig.qr = doc["qr"];
+    softwareConfig.facial = doc["facial"];
+    softwareConfig.logic = doc["logic"];
+    softwareConfigEnabled = true;
+    
+    // Feedback visual/auditivo
+    provideDipConfigFeedback();
+    
+    // Notificar cambio exitoso
+    publishDipConfigUpdate();
+}
 ```
 
 #### **2. Lectura de Sensores**
